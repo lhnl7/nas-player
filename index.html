@@ -1,196 +1,94 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-  <meta charset="UTF-8" />
-  <title>NAS TikTok Web Player</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <meta charset="UTF-8">
+  <title>NAS TikTok Player</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
   <style>
     body {
       margin: 0;
       background: black;
-      color: white;
       font-family: system-ui;
+      overflow: hidden;
     }
-
-    #login {
-      position: fixed;
-      inset: 0;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      padding: 24px;
-      gap: 12px;
-      background: #000;
-    }
-
-    input, button {
-      padding: 12px;
-      font-size: 16px;
-      border-radius: 8px;
-      border: none;
-      outline: none;
-    }
-
-    button {
-      background: #1db954;
-      color: black;
-      font-weight: bold;
-    }
-
     #app {
       height: 100vh;
       overflow-y: scroll;
       scroll-snap-type: y mandatory;
-      display: none;
     }
-
     .video-item {
       height: 100vh;
       scroll-snap-align: start;
       position: relative;
     }
-
     video {
       width: 100%;
       height: 100%;
       object-fit: contain;
       background: black;
     }
-
     .title {
       position: absolute;
-      bottom: 40px;
+      bottom: 24px;
       left: 16px;
+      color: white;
       font-size: 14px;
       opacity: 0.8;
+    }
+    .folder {
+      position: absolute;
+      top: 20px;
+      left: 16px;
+      color: #00ffcc;
+      font-size: 12px;
+      opacity: 0.9;
     }
   </style>
 </head>
 <body>
 
-  <!-- ✅ 登录界面 -->
-  <div id="login">
-    <h2>NAS WebDAV 登录</h2>
-    <input id="url" placeholder="WebDAV URL（如 http://192.168.1.5:5005/）" />
-    <input id="user" placeholder="用户名" />
-    <input id="pass" type="password" placeholder="密码" />
-    <button onclick="start()">开始扫描</button>
-  </div>
-
-  <!-- ✅ TikTok 播放界面 -->
-  <div id="app"></div>
+<div id="app"></div>
 
 <script>
-const login = document.getElementById("login");
-const app = document.getElementById("app");
+let videos = [];
 
-const urlInput = document.getElementById("url");
-const userInput = document.getElementById("user");
-const passInput = document.getElementById("pass");
-
-// ✅ 读取本地保存的账号
-urlInput.value = localStorage.getItem("dav_url") || "";
-userInput.value = localStorage.getItem("dav_user") || "";
-passInput.value = localStorage.getItem("dav_pass") || "";
-
-let videoList = [];
-
-async function start() {
-  const baseURL = urlInput.value.trim();
-  const user = userInput.value.trim();
-  const pass = passInput.value.trim();
-
-  if (!baseURL || !user || !pass) {
-    alert("请填写完整 WebDAV 信息");
-    return;
-  }
-
-  localStorage.setItem("dav_url", baseURL);
-  localStorage.setItem("dav_user", user);
-  localStorage.setItem("dav_pass", pass);
-
-  login.innerHTML = "<h2>正在扫描 NAS 全部视频…</h2>";
-
-  try {
-    videoList = [];
-    await scan("", baseURL, user, pass);
-
-    if (videoList.length === 0) {
-      alert("未扫描到视频文件");
-      location.reload();
-      return;
-    }
-
-    shuffle(videoList);
-    buildPlayer(videoList);
-
-    login.style.display = "none";
-    app.style.display = "block";
-
-  } catch (e) {
-    alert("扫描失败，请检查 WebDAV 是否支持浏览");
-    console.error(e);
-    location.reload();
-  }
-}
-
-// ✅ 递归扫描 WebDAV
-async function scan(path, baseURL, user, pass) {
-  const res = await fetch(baseURL + path, {
-    method: "PROPFIND",
-    headers: {
-      "Depth": "1",
-      "Authorization": "Basic " + btoa(user + ":" + pass)
-    }
+fetch("./videos.json")
+  .then(res => res.json())
+  .then(list => {
+    shuffle(list);
+    videos = list;
+    buildPlayer(list);
   });
 
-  const text = await res.text();
-  const dom = new DOMParser().parseFromString(text, "text/xml");
-  const items = dom.getElementsByTagName("d:response");
-
-  for (let item of items) {
-    const href = item.getElementsByTagName("d:href")[0]?.textContent;
-    if (!href) continue;
-
-    const clean = decodeURIComponent(href.replace(baseURL, ""));
-    if (!clean || clean === path) continue;
-
-    const isDir = item.innerHTML.includes("collection");
-
-    if (isDir) {
-      await scan(clean, baseURL, user, pass);
-    } else {
-      if (/\.(mp4|mov|m4v|mkv)$/i.test(clean)) {
-        videoList.push(baseURL + clean);
-      }
-    }
-  }
-}
-
-// ✅ 构建 TikTok 播放界面
 function buildPlayer(list) {
+  const app = document.getElementById("app");
   app.innerHTML = "";
 
-  list.forEach(url => {
+  list.forEach(v => {
     const div = document.createElement("div");
     div.className = "video-item";
 
     const video = document.createElement("video");
-    video.src = url;
+    video.src = v.url;
     video.controls = true;
     video.preload = "auto";
 
     const title = document.createElement("div");
     title.className = "title";
-    title.innerText = url.split("/").pop();
+    title.innerText = v.name || v.url.split("/").pop();
+
+    const folder = document.createElement("div");
+    folder.className = "folder";
+    folder.innerText = "目录：" + v.folder;
 
     div.appendChild(video);
     div.appendChild(title);
+    div.appendChild(folder);
     app.appendChild(div);
   });
 }
 
-// ✅ 洗牌算法（随机播放）
+// ✅ 随机洗牌
 function shuffle(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
