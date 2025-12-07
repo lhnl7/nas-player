@@ -1,233 +1,95 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-  <meta charset="UTF-8">
-  <title>NAS TikTok Player</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-  <style>
-    * {
-      box-sizing: border-box;
-    }
-    body {
-      margin: 0;
-      background: black;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
-      overflow: hidden;
-      color: #fff;
-    }
-    #app {
-      height: 100vh;
-      overflow-y: scroll;
-      scroll-snap-type: y mandatory;
-      -webkit-overflow-scrolling: touch;
-    }
-    .video-item {
-      height: 100vh;
-      scroll-snap-align: start;
-      position: relative;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #000;
-    }
-    video {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      background: #000;
-    }
-    .info {
-      position: absolute;
-      left: 12px;
-      right: 12px;
-      bottom: 24px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      text-shadow: 0 0 6px rgba(0,0,0,0.8);
-      pointer-events: none;
-    }
-    .name {
-      font-size: 14px;
-      font-weight: 500;
-      opacity: 0.95;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .folder {
-      font-size: 12px;
-      opacity: 0.8;
-      color: #00ffd5;
-    }
-    .badge {
-      position: absolute;
-      top: 18px;
-      left: 12px;
-      padding: 4px 8px;
-      border-radius: 999px;
-      background: rgba(0,0,0,0.6);
-      font-size: 11px;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      pointer-events: none;
-    }
-    .badge-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: #00ff8c;
-    }
-    .hint {
-      position: absolute;
-      right: 12px;
-      bottom: 60px;
-      font-size: 11px;
-      opacity: 0.8;
-      text-align: right;
-      pointer-events: none;
-    }
-    .loading, .error {
-      position: fixed;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #000;
-      color: #fff;
-      font-size: 14px;
-      padding: 16px;
-      text-align: center;
-      z-index: 10;
-    }
-    .error {
-      background: #200;
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NAS 刷视频</title>
+<style>
+html, body {
+  margin: 0;
+  padding: 0;
+  background: black;
+  height: 100%;
+  overflow: hidden;
+}
+#loading {
+  position: fixed;
+  top: 50%;
+  width: 100%;
+  text-align: center;
+  color: white;
+  font-size: 18px;
+  transform: translateY(-50%);
+}
+.video-wrap {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: black;
+}
+</style>
 </head>
 <body>
 
-<div id="loading" class="loading">正在加载视频列表…</div>
-<div id="error" class="error" style="display:none;">加载失败，请检查 videos.json 是否和 index.html 在同一目录</div>
-
-<div id="app"></div>
+<div id="loading">正在加载视频列表…</div>
+<div id="player" class="video-wrap" style="display:none;">
+  <video id="video" playsinline webkit-playsinline controls></video>
+</div>
 
 <script>
-  const app = document.getElementById('app');
-  const loading = document.getElementById('loading');
-  const errorBox = document.getElementById('error');
+let list = [];
+let index = 0;
+const video = document.getElementById("video");
+const loading = document.getElementById("loading");
+const player = document.getElementById("player");
 
-  let videos = [];
-  let observersSetup = false;
+fetch("videos.json")
+  .then(res => res.json())
+  .then(data => {
+    list = data;
+    if (!list.length) throw new Error("空视频列表");
+    loading.style.display = "none";
+    player.style.display = "flex";
+    play();
+  })
+  .catch(err => {
+    loading.innerText = "加载失败，请刷新";
+    console.error(err);
+  });
 
-  // 读取 videos.json
-  fetch('./videos.json?_t=' + Date.now())
-    .then(res => {
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      return res.json();
-    })
-    .then(list => {
-      if (!Array.isArray(list) || list.length === 0) {
-        throw new Error('列表为空');
-      }
-      videos = list.slice();
-      shuffle(videos);
-      buildPlayer(videos);
-      loading.style.display = 'none';
-    })
-    .catch(err => {
-      console.error(err);
-      loading.style.display = 'none';
-      errorBox.style.display = 'flex';
-      errorBox.innerText = '加载 videos.json 失败：' + err.message;
-    });
+function play() {
+  const item = list[index];
+  video.src = item.url;
+  video.load();
+  video.play().catch(() => {});
+}
 
-  // 构建页面
-  function buildPlayer(list) {
-    app.innerHTML = '';
+video.onended = next;
 
-    list.forEach((v, index) => {
-      const item = document.createElement('div');
-      item.className = 'video-item';
-      item.dataset.index = index;
+let startY = 0;
 
-      const video = document.createElement('video');
-      video.src = v.url;
-      video.controls = true;
-      video.preload = 'metadata';
-      video.playsInline = true;
-      video.setAttribute('webkit-playsinline', 'true');
-      video.muted = true; // 默认静音方便自动播放
+document.addEventListener("touchstart", e => {
+  startY = e.touches[0].clientY;
+});
 
-      const badge = document.createElement('div');
-      badge.className = 'badge';
-      badge.innerHTML = '<span class="badge-dot"></span><span>NAS 播放 · 上下滑切换</span>';
+document.addEventListener("touchend", e => {
+  const dy = e.changedTouches[0].clientY - startY;
+  if (Math.abs(dy) > 50) next();
+});
 
-      const info = document.createElement('div');
-      info.className = 'info';
-
-      const name = document.createElement('div');
-      name.className = 'name';
-      name.innerText = v.name || (v.url ? v.url.split('/').pop() : '未命名视频');
-
-      const folder = document.createElement('div');
-      folder.className = 'folder';
-      folder.innerText = '目录：' + (v.folder || 'root');
-
-      info.appendChild(name);
-      info.appendChild(folder);
-
-      const hint = document.createElement('div');
-      hint.className = 'hint';
-      hint.innerHTML = '↑ 下一个视频<br>↓ 上一个视频<br>点播放器按钮可开声音';
-
-      item.appendChild(video);
-      item.appendChild(badge);
-      item.appendChild(info);
-      item.appendChild(hint);
-      app.appendChild(item);
-    });
-
-    setupAutoPlay();
-  }
-
-  // 自动播放当前屏视频
-  function setupAutoPlay() {
-    if (observersSetup) return;
-    observersSetup = true;
-
-    const items = document.querySelectorAll('.video-item');
-    const options = {
-      root: app,
-      threshold: 0.6
-    };
-
-    const io = new IntersectionObserver(entries => {
-      entries.forEach(entry => {
-        const video = entry.target.querySelector('video');
-        if (!video) return;
-
-        if (entry.isIntersecting) {
-          // 当前视频进入视野，尝试播放
-          video.play().catch(() => {/* 被浏览器限制也没关系 */});
-        } else {
-          // 离开视野暂停
-          video.pause();
-        }
-      });
-    }, options);
-
-    items.forEach(item => io.observe(item));
-  }
-
-  // 随机打乱
-  function shuffle(arr) {
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-  }
+function next() {
+  index++;
+  if (index >= list.length) index = 0;
+  play();
+}
 </script>
+
 </body>
 </html>
